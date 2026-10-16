@@ -3,8 +3,10 @@
 // 设计取舍（本 fork）：
 //   * 只保留一个服务器端令牌 GH_TOKEN。调用方不需要、也无法提供任何令牌，
 //     也不存在"路径专用令牌"这类配置。端点因此是公开的 —— 请用
-//     「不公开的地址 + 最小权限令牌 + GH_NAME/GH_REPO 钉死仓库」来收敛风险；
-//     需要真正的访问控制时，在 Worker 前面挂 Cloudflare Access，而不是在代码里手搓令牌。
+//     「不公开的地址 + 最小权限令牌」收敛风险；需要真正的访问控制时，在 Worker
+//     前面挂 Cloudflare Access，而不是在代码里手搓令牌。
+//   * GH_NAME + GH_REPO 必填（fail-closed）：缺任一个就直接 500，永远不会退化成一个
+//     面向 raw.githubusercontent.com 的公开代理。请求路径一律拼在「用户名/仓库」之后。
 //   * 令牌只存在于 env 中：不写进 URL、不回给调用方、不进日志。
 //
 // 历史缺陷：此前的版本把令牌存在模块作用域的变量里跨请求复用，导致匿名请求
@@ -20,7 +22,8 @@
 //      后者会被畸形编码掩护过去，见 hasNestedTraversal）。
 //   5. 304 / 204 / 205 等无正文状态用 null 作为 body 透传，否则 Response 构造会抛 TypeError。
 //   6. 3xx 原样透传（保住 Location），不当成错误。
-//   7. 配了 GH_NAME 就严格钉死仓库，完整 raw URL 形态无法绕过。
+//   7. GH_NAME / GH_REPO 必填，缺任一个即 500：请求路径一律拼在「用户名/仓库」之后，
+//      不存在「完整 raw URL」这类绕过形态（也因此没有兼容分支要维护）。
 //   8. 首页伪装分支不转发调用方的请求头，且 HEAD 不会白下载整个伪装页。
 //   9. 不再用 `URL` 作为变量名，避免遮蔽全局 WHATWG URL 构造器。
 
@@ -90,6 +93,12 @@ async function handleRequest(request, env) {
 
 	if (!env.GH_TOKEN) return new Response('服务器GitHub TOKEN配置错误', { status: 500 });
 
+	// fail-closed：必须钉死「用户名/仓库」。缺了就拒绝服务，而不是退化成公开代理。
+	// 用 cleanSegment 判断：只填了空白或斜杠的值，等同于没填。
+	if (!cleanSegment(env.GH_NAME) || !cleanSegment(env.GH_REPO)) {
+		return new Response('服务器未配置 GH_NAME 或 GH_REPO', { status: 500 });
+	}
+
 	if (hasNestedTraversal(url.pathname)) return new Response('非法路径', { status: 400 });
 
 	const headers = new Headers();
@@ -124,33 +133,15 @@ async function handleRequest(request, env) {
 }
 
 /**
- * 组装上游 URL。目标主机恒为 raw.githubusercontent.com，不会成为开放代理。
+ * 组装上游 URL。目标主机恒为 raw.githubusercontent.com；路径一律拼在「用户名/仓库[/分支]」之后，
+ * 因此不会成为开放代理，也不存在「完整 raw URL」这种形态。
+ * 调用方在 handleRequest 里已确认 GH_NAME / GH_REPO 都非空。
  */
 function buildUpstreamUrl(url, env) {
-	const ghName = cleanSegment(env.GH_NAME);
-	const ghRepo = cleanSegment(env.GH_REPO);
+	let target = GITHUB_RAW + '/' + cleanSegment(env.GH_NAME) + '/' + cleanSegment(env.GH_REPO);
 	const ghBranch = cleanSegment(env.GH_BRANCH);
-
-	// 配了 GH_NAME 就严格钉死，绝不给「完整 raw URL」形态绕过的机会。
-	// 否则攻击者只要访问
-	//   https://<你的域名>/https://raw.githubusercontent.com/<你账号下别的私有库>/main/...
-	// 就能用你的令牌读走它有权访问的所有仓库 —— 钉死形同虚设。
-	// 这种请求现在会被当成钉死前缀下的普通路径，由上游返回 404（失败即关闭）。
-	if (ghName) {
-		let target = GITHUB_RAW + '/' + ghName;
-		if (ghRepo) {
-			target += '/' + ghRepo;
-			if (ghBranch) target += '/' + ghBranch;
-		}
-		return target + url.pathname;
-	}
-
-	// 没有钉死时才兼容完整 URL 形态。
-	// 用 indexOf 而不是 new RegExp(GITHUB_RAW, 'i')：后者里的 `.` 会匹配任意字符。
-	const index = url.pathname.toLowerCase().indexOf(GITHUB_RAW);
-	if (index !== -1) return GITHUB_RAW + url.pathname.slice(index + GITHUB_RAW.length);
-
-	return GITHUB_RAW + url.pathname;
+	if (ghBranch) target += '/' + ghBranch;
+	return target + url.pathname;
 }
 
 /**
