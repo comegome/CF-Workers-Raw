@@ -93,7 +93,7 @@ async function handleRequest(request, env) {
 
 	if (!env.GH_TOKEN) return new Response('服务器GitHub TOKEN配置错误', { status: 500 });
 
-	// fail-closed：必须锁定「用户名/仓库」。缺了就拒绝服务，而不是退化成公开代理。
+	// fail-closed：必须限定在「用户名/仓库」。缺了就拒绝服务，而不是退化成公开代理。
 	// 用 cleanSegment 判断：只填了空白或斜杠的值，等同于没填。
 	if (!cleanSegment(env.GH_NAME) || !cleanSegment(env.GH_REPO)) {
 		return new Response('服务器未配置 GH_NAME 或 GH_REPO', { status: 500 });

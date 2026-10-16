@@ -1,7 +1,7 @@
 # 🚀 CF-Workers-Raw：轻松访问 GitHub 私有仓库
 
 > [!WARNING]
-> **这个 Worker 没有任何客户端鉴权。** 任何拿到地址的人，都能读取你锁定的那个仓库里的内容。
+> **这个 Worker 没有任何客户端鉴权。** 任何拿到地址的人，都能读取你限定的那个仓库里的内容。
 >
 > 它**强制要求**配置 `GH_NAME` + `GH_REPO`（缺任一个直接返回 500），所以它从设计上就不会变成一个面向 `raw.githubusercontent.com` 的公开代理。
 > 除了这两条，你还需要：**令牌用最小权限（Fine-grained，仅 `Contents: Read`）**、**不要把地址公开**。
@@ -35,7 +35,7 @@ https://raw.090227.xyz/_worker.js
 **拼接规则**：`https://<你的域名>/<分支>/<仓库内路径>` →
 `https://raw.githubusercontent.com/<GH_NAME>/<GH_REPO>/<GH_BRANCH 或地址里的分支>/<仓库内路径>`。
 
-**不支持也永远不会支持「完整 raw URL」形态**（形如 `https://你的域名/https://raw.githubusercontent.com/...`）：它会被当成仓库内的一个普通路径。这曾经是绕过仓库锁定的口子，现在从代码里彻底删掉了。
+**不支持也永远不会支持「完整 raw URL」形态**（形如 `https://你的域名/https://raw.githubusercontent.com/...`）：它会被当成仓库内的一个普通路径。这曾经是绕过仓库限定的口子，现在从代码里彻底删掉了。
 
 ## ⚙️ 配置
 
@@ -67,7 +67,7 @@ https://raw.090227.xyz/_worker.js
 
 | 措施 | 挡住的是什么 |
 |--|--|
-| **代码强制锁定仓库** | `GH_NAME` + `GH_REPO` 缺失时直接 500。它不可能退化成「谁都能借它读任意仓库」的公开代理，也不存在用完整 URL 绕过锁定的形态 |
+| **代码强制限定仓库** | `GH_NAME` + `GH_REPO` 缺失时直接 500。它不可能退化成「谁都能借它读任意仓库」的公开代理，也不存在用完整 URL 绕过限定的形态 |
 | **令牌用最小权限** | 即使地址泄漏，能读到的也只有那一个仓库（Fine-grained + 仅 `Contents: Read`） |
 | **不公开地址** | 抬高被撞见的门槛。**注意**：如果这份配置放在**公开仓库**里，`wrangler.toml` 里的 Worker 名字也是公开的，这一层只能算降低可见度 |
 | **能吊销** | 怀疑泄漏时立刻在 GitHub 吊销并更换令牌 |
@@ -97,9 +97,9 @@ https://raw.090227.xyz/_worker.js
 
 本 fork 相对 [cmliu/CF-Workers-Raw](https://github.com/cmliu/CF-Workers-Raw) 的**行为不兼容**之处：
 
-- **删除了所有客户端鉴权**：不再支持 `?token=` 参数、`TOKEN`、`TOKEN_PATH`。端点公开，靠仓库锁定 + 最小权限令牌 + 不公开地址收敛。
+- **删除了所有客户端鉴权**：不再支持 `?token=` 参数、`TOKEN`、`TOKEN_PATH`。端点公开，靠仓库限定 + 最小权限令牌 + 不公开地址收敛。
 - **`GH_NAME` + `GH_REPO` 变成必填**：上游不配置也能跑（会变成一个公开代理），本 fork 缺任一个直接 500。
-- **不再支持「完整 raw URL」形态**：上游可用它绕过仓库锁定，本 fork 已删除这条分支。
+- **不再支持「完整 raw URL」形态**：上游可用它绕过仓库限定，本 fork 已删除这条分支。
 - 修复了上游模块级 `let token` 造成的**跨请求令牌泄漏**；转发 `Range` / `If-None-Match` / `If-Modified-Since`；只允许 `GET` / `HEAD`。
 
 # 🙏 感谢
